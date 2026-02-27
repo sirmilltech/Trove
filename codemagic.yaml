@@ -1,0 +1,47 @@
+workflows:
+  ios-workflow:
+    name: TROVE iOS Build
+    max_build_duration: 120
+
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.milltech.trove.app
+      groups:
+        - apple_auth # We will create this in Codemagic UI
+      vars:
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+        BUNDLE_ID: "com.milltech.trove.app"
+        DEVELOPMENT_TEAM: "JBMD9M6ZPC"
+        APP_STORE_APPLE_ID: "6759795263" # Find this in App Store Connect App Information
+    scripts:
+      - name: Install dependencies
+        script: npm install
+      - name: Capacitor Sync
+        script: npx cap sync ios
+      - name: Set up code signing
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --create
+      - name: Build iOS App
+        script: |
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath build/ios/xcarchive/App.xcarchive \
+            -allowProvisioningUpdates \
+            clean archive
+      - name: Export IPA
+        script: |
+          xcodebuild -exportArchive \
+            -archivePath build/ios/xcarchive/App.xcarchive \
+            -exportOptionsPlist ios/App/App/ExportOptions.plist \
+            -exportPath build/ios/ipa
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
