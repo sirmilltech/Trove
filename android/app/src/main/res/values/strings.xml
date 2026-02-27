@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TROVE</string>
+    <string name="title_activity_main">TROVE</string>
+    <string name="package_name">com.milltech.trove.app</string>
+    <string name="custom_url_scheme">com.milltech.trove.app</string>
+</resources>

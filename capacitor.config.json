@@ -1,0 +1,6 @@
+{
+  "appId": "com.milltech.trove.app",
+  "appName": "trove",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
