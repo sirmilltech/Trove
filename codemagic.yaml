@@ -1,59 +1,47 @@
 # Codemagic configuration for Trove iOS Build
-# Ensure you have the 'apple_credentials' group in your Environment Variables UI
+# Ref: https://docs.codemagic.io/yaml-publishing/app-store-connect/
 
 workflows:
   ios-release:
     name: Trove iOS Release
-    max_build_duration: 60
+    max_build_duration: 120
     instance_type: mac_mini_m2
+    # This links the workflow to your specific 'troves' integration
+    integrations:
+      app_store_connect: troves 
     environment:
       groups:
-        - apple_credentials # Matches the group name in Codemagic UI
+        - apple_credentials 
       vars:
         XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
-        APP_ID: 6742702737
+        # The Bundle ID for your application
         BUNDLE_ID: "com.milltech.trove.app"
       node: latest
       xcode: latest
-      cocoapods: default
-
     scripts:
       - name: Install dependencies
         script: |
           npm install
           cd ios/App && pod install
-
-      - name: Initialize Apple Auth Integration
+      - name: Set up code signing
         script: |
-          # This command dynamically creates the "apple_auth" integration 
-          # using the variables you added to the UI.
-          key_path=$FCI_TEMP_DIR/apple_key.p8
-          echo "$APP_STORE_CONNECT_PRIVATE_KEY" > $key_path
-          
-          key-tool install --key "$APP_STORE_CONNECT_PRIVATE_KEY" --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" --issuer-id "$APP_STORE_CONNECT_ISSUER_ID"
-          
-          # Now we "register" the credentials under the name 'apple_auth'
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
-            --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
-            --private-key "@file:$key_path" \
-            --create
-
+          # Keychain and provisioning profile management
+          keychain initialize
+          # Uses the 'troves' integration automatically to fetch certificates
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          keychain add-certificates
       - name: Build iOS IPA
         script: |
-          # Build the project using the 'apple_auth' we just registered above
           xcode-project build-ipa \
             --workspace "$XCODE_WORKSPACE" \
-            --scheme "$XCODE_SCHEME" \
-            --bundle-id "$BUNDLE_ID"
-
+            --scheme "$XCODE_SCHEME"
     artifacts:
       - build/ios/ipa/*.ipa
-      - /tmp/xcodebuild_logs/*.log
-
     publishing:
       app_store_connect:
-        # This tells Codemagic to use the credentials we defined in the script
-        auth: integration 
+        # Use 'integration' to reference the 'troves' defined above
+        auth: integration
         submit_to_testflight: true
+        beta_groups:
+          - "Internal Testers"
