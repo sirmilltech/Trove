@@ -2,8 +2,8 @@ workflows:
   ios-workflow:
     name: TROVE iOS Build
     max_build_duration: 120
+    instance_type: mac_mini_m1 # Optimized for faster iOS builds
 
-    # FIX: Added this integrations block to satisfy the publishing requirement
     integrations:
       app_store_connect: apple_auth 
 
@@ -12,26 +12,27 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.milltech.trove.app
       groups:
-        - apple_auth 
+        - apple_auth # This must match the name in Codemagic UI
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
         BUNDLE_ID: "com.milltech.trove.app"
-        DEVELOPMENT_TEAM: "JBMD9M6ZPC"
         APP_STORE_APPLE_ID: "6759795263" 
 
     scripts:
       - name: Install dependencies
         script: npm install
       - name: Capacitor Sync
-        script: npx cap sync ios
+        script: | 
+          # Syncs your 'www' folder (seen in your screenshots) to the iOS project
+          npx cap sync ios
       - name: Increment Build Number
         script: | 
-          # Automatically increments build number based on Codemagic build count
           cd ios/App
           agvtool new-version -all $(($BUILD_NUMBER + 100))
       - name: Set up code signing
         script: |
+          # This fetches certificates automatically using the API key we'll set up
           app-store-connect fetch-signing-files "$BUNDLE_ID" --create
       - name: Build iOS App
         script: |
@@ -45,8 +46,6 @@ workflows:
             clean archive
       - name: Export IPA
         script: |
-          # Note: Codemagic usually handles the Plist generation if using automatic signing,
-          # but this script remains for your manual export path.
           xcodebuild -exportArchive \
             -archivePath build/ios/xcarchive/App.xcarchive \
             -exportOptionsPlist ios/App/App/ExportOptions.plist \
