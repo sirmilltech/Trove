@@ -1,63 +1,59 @@
+# Codemagic configuration for Trove iOS Build
+# Ensure you have the 'apple_credentials' group in your Environment Variables UI
+
 workflows:
-  ios-workflow:
-    name: TROVE iOS Build
-    max_build_duration: 120
-    instance_type: mac_mini_m1 # Optimized for faster iOS builds
-
-    integrations:
-      app_store_connect: apple_auth_trove
-
+  ios-release:
+    name: Trove iOS Release
+    max_build_duration: 60
+    instance_type: mac_mini_m2
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.milltech.trove.app
       groups:
-        - apple_auth # This must match the name in Codemagic UI
+        - apple_credentials # Matches the group name in Codemagic UI
       vars:
-        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
+        APP_ID: 6742702737
         BUNDLE_ID: "com.milltech.trove.app"
-        APP_STORE_APPLE_ID: "6759795263" 
+      node: latest
+      xcode: latest
+      cocoapods: default
 
     scripts:
       - name: Install dependencies
-        script: npm install
-      - name: Capacitor Sync
-        script: | 
-          # Syncs your 'www' folder (seen in your screenshots) to the iOS project
-          npx cap sync ios
-      - name: Increment Build Number
-        script: | 
-          cd ios/App
-          agvtool new-version -all $(($BUILD_NUMBER + 100))
-      - name: Set up code signing
         script: |
-          # This fetches certificates automatically using the API key we'll set up
-          app-store-connect fetch-signing-files "$BUNDLE_ID" --create
-      - name: Build iOS App
+          npm install
+          cd ios/App && pod install
+
+      - name: Initialize Apple Auth Integration
         script: |
-          xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -sdk iphoneos \
-            -configuration Release \
-            -archivePath build/ios/xcarchive/App.xcarchive \
-            -allowProvisioningUpdates \
-            clean archive
-      - name: Export IPA
+          # This command dynamically creates the "apple_auth" integration 
+          # using the variables you added to the UI.
+          key_path=$FCI_TEMP_DIR/apple_key.p8
+          echo "$APP_STORE_CONNECT_PRIVATE_KEY" > $key_path
+          
+          key-tool install --key "$APP_STORE_CONNECT_PRIVATE_KEY" --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" --issuer-id "$APP_STORE_CONNECT_ISSUER_ID"
+          
+          # Now we "register" the credentials under the name 'apple_auth'
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
+            --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            --private-key "@file:$key_path" \
+            --create
+
+      - name: Build iOS IPA
         script: |
-          xcodebuild -exportArchive \
-            -archivePath build/ios/xcarchive/App.xcarchive \
-            -exportOptionsPlist ios/App/App/ExportOptions.plist \
-            -exportPath build/ios/ipa
-            
+          # Build the project using the 'apple_auth' we just registered above
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME" \
+            --bundle-id "$BUNDLE_ID"
+
     artifacts:
       - build/ios/ipa/*.ipa
-      
+      - /tmp/xcodebuild_logs/*.log
+
     publishing:
       app_store_connect:
-        auth: integration
+        # This tells Codemagic to use the credentials we defined in the script
+        auth: integration 
         submit_to_testflight: true
-      email:
-        recipients:
-          - sirmilltech@gmail.com
