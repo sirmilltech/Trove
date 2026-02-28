@@ -13,10 +13,12 @@ workflows:
       groups:
         - apple_credentials 
       vars:
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_WORKSPACE: "ios/App/App.xcworkspace"
-        XCODE_SCHEME: "App"
         # The Bundle ID for your application
+        XCODE_SCHEME: "App"
         BUNDLE_ID: "com.milltech.trove.app"
+        APP_STORE_APPLE_ID: "6759795263" 
       node: latest
       xcode: latest
     scripts:
