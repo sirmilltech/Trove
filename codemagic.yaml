@@ -2,48 +2,128 @@
 # Ref: https://docs.codemagic.io/yaml-publishing/app-store-connect/
 
 workflows:
-  ios-release:
-    name: Trove iOS Release
+  ios-workflow:
+    name: Nur-Mecca iOS Final Fix V32
     max_build_duration: 120
     instance_type: mac_mini_m2
+
     integrations:
-      app_store_connect: troves 
+      app_store_connect: "troves"
+
     environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.milltech.trove.app
+      groups:
+        - apple_auth_trove
       vars:
-        XCODE_PROJECT: "ios/App/App.xcodeproj"
-        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
         BUNDLE_ID: "com.milltech.trove.app"
+        DEVELOPMENT_TEAM: "JBMD9M6ZPC"
         APP_STORE_APPLE_ID: "6759795263" 
       node: latest
       xcode: latest
+
     scripts:
-      - name: Install dependencies and Sync Capacitor
+      - name: Increment Build Number
         script: |
-          npm install
-          # Ensure the web assets are built so Capacitor can sync
-          npm run build --if-present
-          
-          # Sync Capacitor to ensure the /ios folder and Podfile are generated/updated
+          OFFSET=300
+          BUILD_NUM=$((${CM_BUILD_NUMBER:-1} + $OFFSET))
+          echo "BUILD_NUMBER=$BUILD_NUM" >> $CM_ENV
+          find . -name "project.pbxproj" -exec sed -i '' "s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = $BUILD_NUM;/g" {} +
+
+      - name: Initialize Environment
+        script: |
+          npm install --ignore-scripts
           npx cap sync ios
-          
-          # Navigate to the correct directory for Pods
-          # If 'npx cap sync' was successful, this directory will exist
-          cd ios/App
-          pod install
-      - name: Set up code signing
+
+      - name: Fetch Signing & Global Certificate Injection
         script: |
           keychain initialize
           app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
           keychain add-certificates
-      - name: Build iOS IPA
+          
+          python3 -c "
+          import os, sys, re, glob
+          
+          profile_path = glob.glob(os.path.expanduser('~/Library/MobileDevice/Provisioning Profiles/*.mobileprovision'))
+          if not profile_path:
+              print('No profile found')
+              sys.exit(1)
+          
+          with open(profile_path[0], 'rb') as f:
+              content = f.read().decode('latin-1')
+              uuid = re.search(r'<key>UUID</key>\s*<string>([^<]+)</string>', content).group(1)
+              name = re.search(r'<key>Name</key>\s*<string>([^<]+)</string>', content).group(1)
+          
+          with open(os.getenv('CM_ENV'), 'a') as env_file:
+              env_file.write(f'\nPROVISIONING_UUID={uuid}')
+              env_file.write(f'\nPROVISIONING_NAME={name}')
+
+          def deep_patch(file_path):
+              with open(file_path, 'r') as f:
+                  text = f.read()
+              text = re.sub(r'ProvisioningStyle = [^;]+;', 'ProvisioningStyle = Manual;', text)
+              text = re.sub(r'DEVELOPMENT_TEAM = [^;]+;', f'DEVELOPMENT_TEAM = \"JBMD9M6ZPC\";', text)
+              text = re.sub(r'PROVISIONING_PROFILE = [^;]+;', f'PROVISIONING_PROFILE = \"{uuid}\";', text)
+              text = re.sub(r'PROVISIONING_PROFILE_SPECIFIER = [^;]+;', f'PROVISIONING_PROFILE_SPECIFIER = \"{name}\";', text)
+              text = re.sub(r'PRODUCT_BUNDLE_IDENTIFIER = [^;]+;', f'PRODUCT_BUNDLE_IDENTIFIER = \"com.milltech.trove.app\";', text)
+              text = re.sub(r'CODE_SIGN_IDENTITY = \"[^\"]+\";', 'CODE_SIGN_IDENTITY = \"iPhone Distribution\";', text)
+              text = re.sub(r'\"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]\" = \"[^\"]+\";', '\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"iPhone Distribution\";', text)
+              with open(file_path, 'w') as f:
+                  f.write(text)
+
+          for root, dirs, files in os.walk('ios'):
+              for file in files:
+                  if file == 'project.pbxproj':
+                      deep_patch(os.path.join(root, file))
+          "
+
+      - name: Hard-Stamp Bundle ID to Info.plist
         script: |
-          # Use the xcode-project build-ipa utility
-          xcode-project build-ipa \
-            --workspace "$XCODE_WORKSPACE" \
-            --scheme "$XCODE_SCHEME"
+          # Find all Info.plist files and force the CFBundleIdentifier to match our ID
+          # This prevents the "Archive Missing Bundle Identifier" error
+          find ios -name "Info.plist" -exec plutil -replace CFBundleIdentifier -string "$BUNDLE_ID" {} +
+
+      - name: Build and Archive
+        script: |
+          XCODE_WORKSPACE=$(find ios -name "*.xcworkspace" | head -n 1)
+          xcodebuild \
+            -workspace "$XCODE_WORKSPACE" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -archivePath build/ios/xcarchive/App.xcarchive \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            PROVISIONING_PROFILE="$PROVISIONING_UUID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_NAME" \
+            CODE_SIGN_IDENTITY="iPhone Distribution" \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            archive
+
+      - name: Export IPA
+        script: |
+          mkdir -p build/ios/ipa
+          python3 -c "
+          import os, plistlib
+          data = {
+              'method': 'app-store',
+              'teamID': 'JBMD9M6ZPC',
+              'uploadSymbols': True,
+              'manageAppVersionAndBuildNumber': False,
+              'provisioningProfiles': {'com.milltech.trove.app': os.getenv('PROVISIONING_NAME')}
+          }
+          with open('export_options.plist', 'wb') as f:
+              plistlib.dump(data, f)
+          "
+          xcodebuild -exportArchive \
+            -archivePath build/ios/xcarchive/App.xcarchive \
+            -exportPath build/ios/ipa \
+            -exportOptionsPlist export_options.plist
+            
     artifacts:
       - build/ios/ipa/*.ipa
+
     publishing:
       app_store_connect:
         auth: integration
