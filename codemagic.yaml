@@ -10,12 +10,11 @@ workflows:
     integrations:
       app_store_connect: troves 
     environment:
-      groups:
-        - apple_credentials 
+      # Removed 'apple_credentials' group as it was undefined and unnecessary 
+      # when using the 'troves' integration.
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_WORKSPACE: "ios/App/App.xcworkspace"
-        # The Bundle ID for your application
         XCODE_SCHEME: "App"
         BUNDLE_ID: "com.milltech.trove.app"
         APP_STORE_APPLE_ID: "6759795263" 
@@ -30,7 +29,8 @@ workflows:
         script: |
           # Keychain and provisioning profile management
           keychain initialize
-          # Uses the 'troves' integration automatically to fetch certificates
+          # This command automatically uses the 'troves' integration API Key
+          # to fetch or create the necessary signing files.
           app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
           keychain add-certificates
       - name: Build iOS IPA
@@ -42,8 +42,9 @@ workflows:
       - build/ios/ipa/*.ipa
     publishing:
       app_store_connect:
-        # Use 'integration' to reference the 'troves' defined above
+        # Refers to the 'troves' integration defined at the top
         auth: integration
         submit_to_testflight: true
+        # Ensure this group exists in App Store Connect or remove the lines below
         beta_groups:
           - "Internal Testers"
