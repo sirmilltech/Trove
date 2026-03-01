@@ -32,20 +32,10 @@ workflows:
           echo "BUILD_NUMBER=$BUILD_NUM" >> $CM_ENV
           find . -name "project.pbxproj" -exec sed -i '' "s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = $BUILD_NUM;/g" {} +
 
-      - name: Initialize Environment
-        script: |
-          npm install --ignore-scripts
-          
-          # 1. Create a dummy web directory if build fails or is missing
-          # 2. Run the actual build script to generate your web assets
-          npm run build --if-present
-          
-          # 3. Ensure a directory exists so npx cap sync doesn't fail
-          # (Check capacitor.config.json; if it expects 'dist', change 'www' to 'dist')
-          mkdir -p www
-          touch www/index.html
-          
-          npx cap sync ios
+      - name: Install & Sync Capacitor
+        script: | 
+          npm install
+          npx cap sync ios    
 
       - name: Fetch Signing & Global Certificate Injection
         script: |
