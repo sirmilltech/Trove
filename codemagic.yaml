@@ -32,7 +32,7 @@ workflows:
           echo "BUILD_NUMBER=$BUILD_NUM" >> $CM_ENV
           find . -name "project.pbxproj" -exec sed -i '' "s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = $BUILD_NUM;/g" {} +
           cd ios/App
-          agvtool new-version -all 302
+          agvtool new-version -all 307
 
       - name: Install & Sync Capacitor
         script: | 
